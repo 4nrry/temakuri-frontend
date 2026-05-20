@@ -3,7 +3,10 @@
  *
  * Página autocontida para inspecionar cada animação de carta isoladamente.
  * Cobre todos os variants de ./animations.ts, os effects/ e os 3
- * componentes de animação. Não depende de nenhum componente de jogo.
+ * componentes de animação. Maior parte usa MockCard; slots marcados como
+ * "integração de produção" montam componentes reais de @/components/game
+ * para validar como o variant fica no design final antes de plugar no
+ * GameBoard.
  *
  * Limitação conhecida: os variants têm timing fixo (TIME_SCALE compile-time);
  * o seletor de velocidade abaixo só afeta os componentes de effects/.
@@ -18,6 +21,7 @@ import { MatchScorePopup } from './MatchScorePopup';
 import { MonteRevealOverlay } from './MonteRevealOverlay';
 import { CardSlamEffect, CardImpactEffect, StageTremor, GlowLayer, ShockwaveRing } from './effects';
 import { SaborPopup } from './SaborPopup';
+import { CardComponent } from '@/components/game/CardComponent';
 import { DevNav } from '../_DevNav';
 import * as A from './animations';
 
@@ -497,6 +501,21 @@ export default function AnimsDevPage() {
           {STATE_CARDS.map((c) => (
             <CardSlot key={c.title} {...c} />
           ))}
+          {/* Integração de produção: CardComponent real com shake plugado
+              via prop shakeKey (incrementa pelo replay). Mesmo gesto que
+              vamos usar no GameBoard quando ação for ilegal. */}
+          <Slot
+            tag="16+"
+            title="Inválida — CardComponent real"
+            note="Mesma anim, agora no <CardComponent> de produção via prop shakeKey. Click replay → shake + ring vermelho. Hover/tap continuam funcionando."
+          >
+            {(k) => (
+              <CardComponent
+                card={{ id: 'demo-invalid', value: 5, category: 'SUSHI', variantIndex: 0 }}
+                shakeKey={k - 1}
+              />
+            )}
+          </Slot>
           {/* Vencedora — glow movido para <GlowLayer> (transform+opacity
               composited) em vez de boxShadow animado. */}
           <Slot title="Vencedora" note="Pop com glow verde via GlowLayer (transform/opacity, composited). Spring juicy.">

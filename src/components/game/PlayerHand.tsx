@@ -1,9 +1,25 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import type { MotionProps } from 'framer-motion';
 import { CardComponent } from './CardComponent';
 import { useGameStore } from '@/stores/gameStore';
 import type { Card } from '@/types/game';
 import { cn } from '@/lib/utils';
+// TODO: mover comboSibling/nonCombo pra src/components/game/ junto com
+// o refactor de animations.ts. Por ora importa de /dev/anims/.
+import { comboSiblingVariants, nonComboVariants } from '@/routes/dev/anims/animations';
+
+/**
+ * Mapeia o estado da carta na coreografia de combo para os MotionProps
+ * que serao espalhados no wrapper. `active` = poderia juntar ao combo
+ * (pulso verde); `dimmed` = nao pode juntar (opacity 0.5); ausencia =
+ * sem decoracao (nenhuma variant aplicada).
+ */
+function comboMotionProps(state: 'idle' | 'active' | 'dimmed'): MotionProps {
+  if (state === 'active') return { variants: comboSiblingVariants, initial: 'rest', animate: 'active' };
+  if (state === 'dimmed') return { variants: nonComboVariants, initial: 'rest', animate: 'dimmed' };
+  return {};
+}
 
 interface PlayerHandProps {
   hand: Card[];
@@ -22,6 +38,9 @@ interface PlayerHandProps {
   // Bloqueia clique em cartas que nao estao nesta lista (whitelist por id).
   // Quando nao passado, sem bloqueio adicional. Usado pelo tutorial.
   allowedCardIds?: string[];
+  // Map cardId -> contador monotonico. Quando incrementa, a carta toca o
+  // shake de jogada invalida. Repassado pro CardComponent.shakeKey.
+  cardShakeKeys?: Record<string, number>;
 }
 
 export function PlayerHand({
@@ -29,6 +48,7 @@ export function PlayerHand({
   onPickInsert, pickMode, drawnCard,
   swapSelectIndex, onSwapSelect,
   selectedIndicesOverride, onToggleOverride, allowedCardIds,
+  cardShakeKeys,
 }: PlayerHandProps) {
   const storeSelected = useGameStore(s => s.selectedIndices);
   const storeToggle = useGameStore(s => s.toggleCardSelection);
@@ -92,6 +112,7 @@ export function PlayerHand({
               responsiveSmall
               selected={swapSelectIndex === i}
               onClick={() => onSwapSelect(i)}
+              shakeKey={cardShakeKeys?.[card.id]}
             />
           </div>
         ))}
@@ -107,26 +128,42 @@ export function PlayerHand({
       data-testid="player-hand"
     >
       <AnimatePresence>
-        {hand.map((card, i) => (
-          <motion.div
-            key={card.id}
-            layout
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.15 }}
-            className="snap-start shrink-0"
-          >
-            <CardComponent
-              card={card}
-              responsiveSmall
-              selected={isSelected(i)}
-              disabled={isCardDisabled(i)}
-              onClick={() => isMyTurn && !pickMode && toggleCardSelection(i)}
-              testId={`player-hand-card-${i}`}
-            />
-          </motion.div>
-        ))}
+        {hand.map((card, i) => {
+          // Coreografia de combo: se ha alguma carta selecionada e esta
+          // nao eh ela, destaca como `active` (poderia juntar) ou apaga
+          // como `dimmed` (incompativel). Sem selecao, todas idle.
+          const selCount = selectedIndices.length;
+          const cardIsSelected = isSelected(i);
+          const comboState: 'idle' | 'active' | 'dimmed' =
+            selCount === 0 || cardIsSelected
+              ? 'idle'
+              : isCardDisabled(i)
+                ? 'dimmed'
+                : 'active';
+          return (
+            <motion.div
+              key={card.id}
+              layout
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15 }}
+              className="snap-start shrink-0"
+            >
+              <motion.div {...comboMotionProps(comboState)} className="rounded-lg">
+                <CardComponent
+                  card={card}
+                  responsiveSmall
+                  selected={cardIsSelected}
+                  disabled={isCardDisabled(i)}
+                  onClick={() => isMyTurn && !pickMode && toggleCardSelection(i)}
+                  testId={`player-hand-card-${i}`}
+                  shakeKey={cardShakeKeys?.[card.id]}
+                />
+              </motion.div>
+            </motion.div>
+          );
+        })}
       </AnimatePresence>
     </div>
   );
