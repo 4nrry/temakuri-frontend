@@ -30,6 +30,9 @@ import { ChatPanel, type PanelHandle } from './ChatPanel';
 import { CardComponent } from './CardComponent';
 import { TrickPickModal } from './TrickPickModal';
 import { DuelPassPickModal } from './DuelPassPickModal';
+// TODO: realocar SaborPopup pra src/components/game/ junto com um subset de
+// animations.ts. Por ora vive em /dev/anims/ e a producao importa de la.
+import { SaborPopup } from '@/routes/dev/anims/SaborPopup';
 import { MedalBadge } from '@/components/ui/MedalBadge';
 import { AvatarWithBorder } from '@/components/ui/Avatar';
 import { LevelBadge } from '@/components/ui/LevelBadge';
@@ -98,6 +101,17 @@ export function GameBoard({ devForceState }: { devForceState?: GameBoardDevForce
 
   // Modal de regras (Como jogar) — abre via icone na navbar mobile in-game.
   const [rulesOpen, setRulesOpen] = useState(false);
+
+  // Shake feedback de jogada invalida — indexado por card.id (estavel
+  // mesmo que a mao reordene). Cada erro do servidor incrementa o counter
+  // das cartas que estavam selecionadas no momento da tentativa.
+  const [cardShakeKeys, setCardShakeKeys] = useState<Record<string, number>>({});
+
+  // SABOR popup fullscreen — disparado ao receber game:sabor_active.
+  // saborPopupTick = counter monotonico (passa pro prop `trigger` do popup).
+  // saborPopupBy = nome do jogador que ativou (mostrado no popup).
+  const [saborPopupTick, setSaborPopupTick] = useState(0);
+  const [saborPopupBy, setSaborPopupBy] = useState<string | undefined>(undefined);
 
   // PlayerDetailsDialog — clicar em qualquer player (oponente ou eu) abre.
   const [playerDialogUserId, setPlayerDialogUserId] = useState<string | null>(null);
@@ -331,6 +345,8 @@ export function GameBoard({ devForceState }: { devForceState?: GameBoardDevForce
     const name = players.find(p => p.userId === triggeredBy)?.username ?? triggeredBy;
     setSaborActive(true, minRequired, name);
     playSound('sabor');
+    setSaborPopupBy(name);
+    setSaborPopupTick(t => t + 1);
     addLog({ type: 'sabor', userId: triggeredBy, username: name, text: `Sabor ativo! Mínimo de ${minRequired} carta(s) por ${name}` });
   }, [setSaborActive, players, addLog]));
 
@@ -501,12 +517,25 @@ export function GameBoard({ devForceState }: { devForceState?: GameBoardDevForce
 
   useSocketEvent<{ code: string; message: string }>('game:error', useCallback(({ message }) => {
     toast.error(message);
+    // Shake nas cartas que estavam selecionadas — feedback visual de
+    // rejeicao. Capturado ANTES do clearSelection() pra preservar os ids.
+    const state = useGameStore.getState();
+    const selectedIds = state.selectedIndices
+      .map(i => state.myHand[i]?.id)
+      .filter((id): id is string => Boolean(id));
+    if (selectedIds.length > 0) {
+      setCardShakeKeys(prev => {
+        const next = { ...prev };
+        for (const id of selectedIds) next[id] = (next[id] ?? 0) + 1;
+        return next;
+      });
+    }
     setPickMode(false);
     setDrawnCard(null);
     setMarketSwapMode(false);
     setSelectedHandIndexForSwap(null);
     hasSubmittedPickRef.current = false;
-    useGameStore.getState().clearSelection();
+    state.clearSelection();
     emitSocketEvent('game:request_state', { roomCode });
   }, [roomCode]));
 
@@ -670,6 +699,10 @@ export function GameBoard({ devForceState }: { devForceState?: GameBoardDevForce
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--color-base)] overflow-hidden select-none" data-testid="game-board">
+      {/* SABOR fullscreen popup — fires once ao receber game:sabor_active.
+          Position fixed, fora do layout flow. */}
+      <SaborPopup trigger={saborPopupTick} triggeredBy={saborPopupBy} />
+
       {/* Game header — usa AppNavbar com badges no slot center.
           mobileMinimal: no celular esconde extras (moedas, loja, admin, perfil...)
           deixando navbar com voltar + center + sair. Os badges Duelo/Espectador/
@@ -995,6 +1028,7 @@ export function GameBoard({ devForceState }: { devForceState?: GameBoardDevForce
                 isMyTurn={isMyTurn}
                 pickMode={pickMode}
                 onPickInsert={pickMode ? handleInsertAtIndex : undefined}
+                cardShakeKeys={cardShakeKeys}
               />
               {isMyTurn && selectedIndices.length > 0 && !canPlay && pile.length > 0 && (
                 <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-3 -translate-y-full z-20">
@@ -1065,6 +1099,7 @@ export function GameBoard({ devForceState }: { devForceState?: GameBoardDevForce
                 isMyTurn={true}
                 swapSelectIndex={selectedHandIndexForSwap}
                 onSwapSelect={setSelectedHandIndexForSwap}
+                cardShakeKeys={cardShakeKeys}
               />
             </div>
             <button

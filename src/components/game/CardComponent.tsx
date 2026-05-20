@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import { useEffect } from 'react';
+import { motion, useAnimationControls } from 'framer-motion';
 import { EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Card } from '@/types/game';
@@ -19,9 +20,28 @@ interface CardProps {
   disabled?: boolean;
   insertTarget?: boolean;
   testId?: string;
+  /**
+   * Contador monotonico. Incrementar dispara um shake horizontal + ring
+   * vermelho (feedback de jogada invalida). undefined / 0 = sem efeito.
+   */
+  shakeKey?: number;
 }
 
-export function CardComponent({ card, selected, onClick, faceDown, small, responsiveSmall, disabled, insertTarget, testId }: CardProps) {
+export function CardComponent({ card, selected, onClick, faceDown, small, responsiveSmall, disabled, insertTarget, testId, shakeKey }: CardProps) {
+  const shakeControls = useAnimationControls();
+
+  useEffect(() => {
+    if (!shakeKey) return;
+    shakeControls.start({
+      x: [0, -5, 5, -4, 3, -2, 0],
+      transition: {
+        duration: 0.4,
+        times: [0, 0.16, 0.34, 0.52, 0.7, 0.85, 1],
+        ease: [0.4, 0, 0.2, 1],
+      },
+    });
+  }, [shakeKey, shakeControls]);
+
   if (faceDown) {
     return (
       <div
@@ -49,6 +69,7 @@ export function CardComponent({ card, selected, onClick, faceDown, small, respon
       data-testid={testId}
       onClick={onClick}
       disabled={disabled}
+      animate={shakeControls}
       whileHover={!disabled ? { y: -4, scale: 1.03 } : {}}
       whileTap={!disabled ? { scale: 0.97 } : {}}
       className={cn(
@@ -66,6 +87,20 @@ export function CardComponent({ card, selected, onClick, faceDown, small, respon
       )}
       style={{ background: `${color}18` }}
     >
+      {shakeKey ? (
+        <motion.span
+          key={shakeKey}
+          aria-hidden
+          className="pointer-events-none absolute -inset-1 rounded-[10px]"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: [0, 1, 1, 0], scale: [0.96, 1, 1, 1.04] }}
+          transition={{ duration: 0.4, times: [0, 0.18, 0.6, 1], ease: [0.4, 0, 0.2, 1] }}
+          style={{
+            boxShadow:
+              '0 0 0 2px oklch(55% 0.22 25 / 0.7), 0 0 16px 2px oklch(55% 0.22 25 / 0.45)',
+          }}
+        />
+      ) : null}
       <span
         className={cn(
           'font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]',
